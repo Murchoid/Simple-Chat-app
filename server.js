@@ -18,6 +18,7 @@ const mongoose = require('mongoose');
 const User = require('./models/User');
 const bcrypt = require('bcrypt');
 require('dotenv').config();
+const port = process.env.PORT || 4000;
 
 // Add cors configuration
 app.use(cors({
