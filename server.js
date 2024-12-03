@@ -125,18 +125,26 @@ io.on('connect', socket => {
         return;
     }
 
-    socket.username = socket.handshake.session.passport.user;
-    const userEmoji = socket.handshake.session.userEmoji;
-    console.log('A user connected:', socket.username);
-    
-    // Modify the broadcast messages to include the same message format
-    io.emit('receive_message', {
-        user: 'System',
-        emoji: '🤖',
-        text: `${userEmoji} has joined the chat`
-    });
+    // Find the user by ID to get their username
+    User.findById(socket.handshake.session.passport.user)
+        .then(user => {
+            socket.username = user.username;  // Use actual username instead of ID
+            const userEmoji = socket.handshake.session.userEmoji;
+            console.log('A user connected:', socket.username);
+            
+            io.emit('receive_message', {
+                user: 'System',
+                emoji: '🤖',
+                text: `${userEmoji + socket.username} has joined the chat`
+            });
+        })
+        .catch(err => {
+            console.error('Error finding user:', err);
+            socket.disconnect();
+        });
 
     socket.on('send_message', message => {
+        const userEmoji = socket.handshake.session.userEmoji;
         console.log(`Message received from ${socket.username} ${userEmoji}: ${message}`);
         io.emit('receive_message', {
             user: socket.username,
@@ -145,13 +153,20 @@ io.on('connect', socket => {
         });
     });
 
+    socket.on('video_control', (data) => {
+        console.log('Video control received:', data);
+        socket.broadcast.emit('video_control', data);
+    });
+
     socket.on('disconnect', () => {
-        console.log('A user disconnected:', socket.username);
-        io.emit('receive_message', {
-            user: 'System',
-            emoji: '🤖',
-            text: `${userEmoji} has left the chat`
-        });
+        if (socket.username) {
+            console.log('A user disconnected:', socket.username);
+            io.emit('receive_message', {
+                user: 'System',
+                emoji: '🤖',
+                text: `${userEmoji + socket.username} has left the chat`
+            });
+        }
     });
 });
 

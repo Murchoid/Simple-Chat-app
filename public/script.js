@@ -1,6 +1,19 @@
 let socket = null; // Global socket variable
 let currentUsername = null; // Add this at the top of your file
 
+// Add YouTube API
+const tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+const firstScriptTag = document.getElementsByTagName('script')[0];
+firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+let players = {};  // Store YouTube player instances
+
+// Function to create YouTube player after API is ready
+function onYouTubeIframeAPIReady() {
+    console.log('YouTube API is ready');
+}
+
 // Function to handle login
 async function login(username, password) {
     try {
@@ -17,7 +30,7 @@ async function login(username, password) {
         }
         
         const data = await response.json();
-        currentUsername = data.emoji; // Store the username
+        currentUsername = data.user; // Store the username
         
         // Initialize socket only after successful login
         await initializeSocket();
@@ -115,7 +128,7 @@ function setupSocketEvents() {
         const messageElement = document.createElement('div');
         messageElement.classList.add('message');
         
-        if (data.emoji === currentUsername) {
+        if (data.user === currentUsername) {
             messageElement.classList.add('sent');
             console.log('Message marked as sent');
         } else {
@@ -123,11 +136,87 @@ function setupSocketEvents() {
             console.log('Message marked as received');
         }
         
-        messageElement.textContent = `${data.emoji}: ${data.text}`;
+        // Check if message contains YouTube URL
+        const words = data.text.split(' ');
+        let messageText = data.text;
+        
+        words.forEach(word => {
+            const videoId = getYouTubeVideoId(word.trim());
+            console.log('Checking word:', word, 'Video ID:', videoId); // Debug log
+            
+            if (videoId) {
+                // Create YouTube embed using iframe directly first
+                const videoContainer = document.createElement('div');
+                const playerId = `youtube-${Date.now()}`;
+                videoContainer.innerHTML = `
+                    <div class="youtube-embed">
+                        <iframe 
+                            id="${playerId}"
+                            width="560" 
+                            height="315" 
+                            src="https://www.youtube.com/embed/${videoId}?enablejsapi=1" 
+                            frameborder="0" 
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                            allowfullscreen>
+                        </iframe>
+                    </div>
+                `;
+                messageElement.appendChild(videoContainer);
+                
+                // After direct iframe embed, initialize the player
+                const iframe = videoContainer.querySelector('iframe');
+                iframe.id = playerId;
+                
+                // Initialize YT Player after a short delay to ensure iframe is loaded
+                setTimeout(() => {
+                    players[playerId] = new YT.Player(playerId, {
+                        events: {
+                            'onReady': (event) => {
+                                console.log('Player ready:', playerId);
+                            },
+                            'onStateChange': (event) => onPlayerStateChange(event, playerId),
+                            'onError': (event) => {
+                                console.error('Player error:', event.data);
+                            }
+                        }
+                    });
+                }, 100);
+            }
+        });
+
+        // Add the text part of the message
+        const textNode = document.createElement('div');
+        textNode.textContent = `${data.emoji + data.user}: ${messageText}`;
+        messageElement.insertBefore(textNode, messageElement.firstChild);
+        
         messages.appendChild(messageElement);
         messages.scrollTop = messages.scrollHeight;
         
         console.log('Message added to chat:', messageElement.textContent);
+    });
+
+    // Handle player state changes
+    function onPlayerStateChange(event, playerId) {
+        console.log('Player state changed:', event.data, 'for player:', playerId);
+        socket.emit('video_control', {
+            playerId: playerId,
+            state: event.data,
+            currentTime: event.target.getCurrentTime()
+        });
+    }
+
+    // Listen for video control events from other users
+    socket.on('video_control', (data) => {
+        console.log('Received video control:', data);
+        const player = players[data.playerId];
+        if (player) {
+            if (data.state === 1) { // Playing
+                player.seekTo(data.currentTime);
+                player.playVideo();
+            } else if (data.state === 2) { // Paused
+                player.pauseVideo();
+            }
+        }
     });
 }
 
@@ -216,3 +305,22 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
         alert('Registration failed');
     }
 });
+
+// Improve the YouTube URL detection function
+function getYouTubeVideoId(url) {
+    // Handle various YouTube URL formats including playlists
+    const patterns = [
+        /(?:https?:\/\/)?(?:www\.)?youtu\.be\/([^?&]+)/i,    // youtu.be format
+        /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([^?&]+)/i,    // youtube.com/watch format
+        /(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([^?&]+)/i     // embed format
+    ];
+
+    for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1]) {
+            // Clean up any additional parameters
+            return match[1].split('?')[0];
+        }
+    }
+    return null;
+}
