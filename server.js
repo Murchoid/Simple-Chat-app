@@ -10,6 +10,7 @@ const mongoose = require('mongoose');
 const User = require('./models/User');
 const bcrypt = require('bcrypt');
 require('dotenv').config();
+const port = process.env.PORT || 4000;
 
 mongoose.connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
@@ -136,6 +137,6 @@ io.on('connect', socket => {
     });
 });
 
-http.listen(4000, () => {
-    console.log('Server is running on port 4000');
+http.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
 });
