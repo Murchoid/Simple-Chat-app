@@ -1,16 +1,31 @@
 const express = require('express');
+const cors = require('cors');
 const app = express();
 const session = require('express-session');
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const http = require('http').createServer(app);
-const io = require('socket.io')(http);
+const io = require('socket.io')(http, {
+    cors: {
+        origin: process.env.NODE_ENV === 'production' 
+            ? 'https://simple-chat-app-n7rq.onrender.com'  // Replace with your actual domain
+            : 'http://localhost:4000',
+        credentials: true
+    }
+});
 const sharedSession = require('express-socket.io-session');
 const mongoose = require('mongoose');
 const User = require('./models/User');
 const bcrypt = require('bcrypt');
 require('dotenv').config();
-const port = process.env.PORT || 4000;
+
+// Add cors configuration
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' 
+        ? 'https://simple-chat-app-n7rq.onrender.com'  // Replace with your actual domain
+        : 'http://localhost:4000',
+    credentials: true  // This is important for cookies/sessions
+}));
 
 mongoose.connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
@@ -111,7 +126,7 @@ io.on('connect', socket => {
     const userEmoji = socket.handshake.session.userEmoji;
     console.log('A user connected:', socket.username);
     
-        // Modify the broadcast messages to include the same message format
+    // Modify the broadcast messages to include the same message format
     io.emit('receive_message', {
         user: 'System',
         emoji: '🤖',
