@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="home.css">
+    <title>Chat Application</title>
+</head>
+<body>
+    <!-- Login Section -->
+    <div id="loginSection">
+        <form id="loginForm">
+            <input type="text" id="username" placeholder="Username" required>
+            <input type="password" id="password" placeholder="Password" required>
+            <button type="submit">Login</button>
+        </form>
+        <p>Don't have an account? <button type="button" id="showRegister">Register</button></p>
+    </div>
+
+    <!-- Register Section -->
+    <div id="registerSection" style="display: none;">
+        <form id="registerForm">
+            <input type="text" id="regUsername" placeholder="Username" required>
+            <input type="password" id="regPassword" placeholder="Password" required>
+            <button type="submit">Register</button>
+        </form>
+        <p>Already have an account? <button type="button" id="showLogin">Login</button></p>
+    </div>
+
+    <!-- Chat Section (initially hidden) -->
+    <div id="chatSection" style="display: none;">
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2>Lets Chat</h2>
+            </div>
+            <div class="chat-messages" id="messages"></div>
+            
+            <form id="form" class="chat-form">
+                <input type="text" id="input" placeholder="Type a message..." autocomplete="off" required />
+                <button type="submit">Send</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script> 
+</body>
+</html>
