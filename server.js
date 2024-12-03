@@ -8,10 +8,12 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http, {
     cors: {
         origin: process.env.NODE_ENV === 'production' 
-            ? 'https://simple-chat-app-n7rq.onrender.com'  // Replace with your actual domain
+            ? true  // Allow all origins in production
             : 'http://localhost:4000',
-        credentials: true
-    }
+        credentials: true,
+        methods: ["GET", "POST"]
+    },
+    transports: ['websocket', 'polling']
 });
 const sharedSession = require('express-socket.io-session');
 const mongoose = require('mongoose');
@@ -23,9 +25,9 @@ const port = process.env.PORT || 4000;
 // Add cors configuration
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
-        ? 'https://simple-chat-app-n7rq.onrender.com'  // Replace with your actual domain
+        ? true  // Allow all origins in production
         : 'http://localhost:4000',
-    credentials: true  // This is important for cookies/sessions
+    credentials: true
 }));
 
 mongoose.connect(process.env.MONGO_URI, {

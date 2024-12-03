@@ -37,12 +37,18 @@ async function initializeSocket() {
     }
 
     return new Promise((resolve, reject) => {
-        socket = io('http://localhost:4000', {
+        // Update the socket connection URL to be dynamic
+        const socketURL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:4000'
+            : window.location.origin;
+
+        socket = io(socketURL, {
             withCredentials: true,
             reconnection: true,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
-            reconnectionAttempts: 5
+            reconnectionAttempts: 5,
+            transports: ['websocket', 'polling']
         });
 
         socket.on('connect', () => {
