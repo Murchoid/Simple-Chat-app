@@ -44,13 +44,11 @@ async function login(username, password) {
 
 // Function to initialize socket connection
 async function initializeSocket() {
-    // If socket exists and is connected, disconnect it first
     if (socket && socket.connected) {
         socket.disconnect();
     }
 
     return new Promise((resolve, reject) => {
-        // Update the socket connection URL to be dynamic
         const socketURL = window.location.hostname === 'localhost' 
             ? 'http://localhost:4000'
             : window.location.origin;
@@ -58,10 +56,11 @@ async function initializeSocket() {
         socket = io(socketURL, {
             withCredentials: true,
             reconnection: true,
+            reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
-            reconnectionAttempts: 5,
-            transports: ['websocket', 'polling']
+            timeout: 20000,
+            autoConnect: true
         });
 
         socket.on('connect', () => {
@@ -76,6 +75,26 @@ async function initializeSocket() {
                 showLoginSection();
             }
             reject(error);
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log('Disconnected:', reason);
+            if (reason === 'io server disconnect') {
+                // Reconnect if server disconnected
+                socket.connect();
+            }
+        });
+
+        socket.on('reconnect', (attemptNumber) => {
+            console.log('Reconnected after', attemptNumber, 'attempts');
+        });
+
+        socket.on('reconnect_attempt', () => {
+            console.log('Attempting to reconnect...');
+        });
+
+        socket.on('reconnect_error', (error) => {
+            console.error('Reconnection error:', error);
         });
 
         setupSocketEvents();

@@ -21,6 +21,7 @@ const User = require('./models/User');
 const bcrypt = require('bcrypt');
 require('dotenv').config();
 const port = process.env.PORT || 4000;
+const MongoStore = require('connect-mongo');
 
 // Add cors configuration
 app.use(cors({
@@ -43,7 +44,16 @@ mongoose.connect(process.env.MONGO_URI, {
 const sessionMiddleware = session({
     secret: process.env.SECRET_KEY,
     resave: false,
-    saveUninitialized: false
+    saveUninitialized: false,
+    store: MongoStore.create({
+        mongoUrl: process.env.MONGO_URI,
+        ttl: 24 * 60 * 60, // Session TTL (1 day)
+        autoRemove: 'native' // Enable automatic removal of expired sessions
+    }),
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 1000 * 60 * 60 * 24 // 1 day
+    }
 });
 
 app.use(express.json());
