@@ -286,17 +286,61 @@ function showRegisterSection() {
 document.getElementById('showRegister').addEventListener('click', showRegisterSection);
 document.getElementById('showLogin').addEventListener('click', showLoginSection);
 
-// Login form handler
+// Add loading overlay show/hide functions
+function showLoading() {
+    const overlay = document.createElement('div');
+    overlay.className = 'loading-overlay';
+    overlay.id = 'loadingOverlay';
+    
+    const spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    
+    overlay.appendChild(spinner);
+    document.body.appendChild(overlay);
+    overlay.style.display = 'flex';
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.remove();
+    }
+}
+
+// Update login form handler
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     
     try {
+        showLoading();
         await login(username, password);
+        hideLoading();
         showChatSection();
     } catch (error) {
+        hideLoading();
         alert('Login failed: ' + error.message);
+    }
+});
+
+// Update register form handler
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('regUsername').value;
+    const password = document.getElementById('regPassword').value;
+    
+    try {
+        showLoading();
+        await register(username, password);
+        hideLoading();
+        // After successful registration, switch to login form
+        document.getElementById('registerSection').style.display = 'none';
+        document.getElementById('loginSection').style.display = 'block';
+        alert('Registration successful! Please login.');
+    } catch (error) {
+        hideLoading();
+        alert('Registration failed');
     }
 });
 
@@ -330,23 +374,6 @@ document.getElementById('showRegister').addEventListener('click', () => {
 document.getElementById('showLogin').addEventListener('click', () => {
     document.getElementById('registerSection').style.display = 'none';
     document.getElementById('loginSection').style.display = 'block';
-});
-
-// Handle register form submission
-document.getElementById('registerForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const username = document.getElementById('regUsername').value;
-    const password = document.getElementById('regPassword').value;
-    
-    try {
-        await register(username, password);
-        // After successful registration, switch to login form
-        document.getElementById('registerSection').style.display = 'none';
-        document.getElementById('loginSection').style.display = 'block';
-        alert('Registration successful! Please login.');
-    } catch (error) {
-        alert('Registration failed');
-    }
 });
 
 // Improve the YouTube URL detection function
