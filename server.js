@@ -28,10 +28,10 @@ const MessageRequest = require('./models/MessageRequest');
 
 // Add cors configuration
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' 
-        ? true  // Allow all origins in production
-        : 'http://localhost:4000',
-    credentials: true
+    origin: 'http://localhost:4000',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 mongoose.connect(process.env.MONGO_URI, {
@@ -105,45 +105,57 @@ const emojis = ["😎", "🥱", "🤠", "💀", "👽", "👾", "🐱‍👤", "
 
 app.post('/register', async (req, res) => {
     try {
+        console.log('Registration request received:', req.body); // Debug log
+
         const { username, password } = req.body;
         
-        // Check if username already exists
-        const existingUser = await User.findOne({ username });
-        if (existingUser) {
-            return res.status(400).json({ 
-                message: 'Username already exists' 
-            });
+        // Validate input
+        if (!username || !password) {
+            return res.status(400).json({ message: 'Username and password are required' });
         }
 
-        // Hash the password
+        // Check if user already exists
+        const existingUser = await User.findOne({ username });
+        console.log('Existing user check:', existingUser); // Debug log
+        
+        if (existingUser) {
+            return res.status(400).json({ message: 'Username already exists' });
+        }
+
+        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Create new user
         const user = new User({
             username,
-            password: hashedPassword,
-            messagePrivacy: 'everyone', // default privacy setting
-            isPrivate: false // default account privacy
+            password: hashedPassword
         });
 
-        await user.save();
-        
-        // Send success response
-        res.status(201).json({ 
+        console.log('Attempting to save user:', user); // Debug log
+
+        // Save user to database
+        const savedUser = await user.save();
+        console.log('User saved successfully:', savedUser); // Debug log
+
+        res.status(201).json({
             message: 'Registration successful',
-            user: { username: user.username }
+            user: {
+                _id: savedUser._id,
+                username: savedUser.username
+            }
         });
-        
+
     } catch (error) {
         console.error('Registration error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             message: 'Error registering user',
-            error: error.message 
+            error: error.message
         });
     }
 });
 
 app.post('/login', passport.authenticate('local'), (req, res) => {
+    console.log('Login successful for user:', req.user.username);
     res.json({
         user: {
             _id: req.user._id,
@@ -329,22 +341,28 @@ app.get('/api/users/suggestions', async (req, res) => {
     }
 });
 
-// Add this route to handle user search
-app.get('/api/users/search', async (req, res) => {
-    try {
-        if (!req.user) {
-            return res.status(401).json({ message: 'Not authenticated' });
-        }
+// Add this middleware function near your other middleware definitions
+const isAuthenticated = (req, res, next) => {
+    if (req.isAuthenticated()) {
+        return next();
+    }
+    res.status(401).json({ message: 'Not authenticated' });
+};
 
+// The route will now work with the middleware
+app.get('/api/users/search', isAuthenticated, async (req, res) => {
+    try {
         const searchTerm = req.query.term;
         const users = await User.find({
             _id: { $ne: req.user._id },
             username: new RegExp(searchTerm, 'i')
         })
-        .select('username avatar')
+        .select('username avatar _id')
         .limit(10);
 
-        res.json(users);
+        // Ensure we're sending an array
+        res.json(Array.isArray(users) ? users : []);
+        
     } catch (error) {
         console.error('Error searching users:', error);
         res.status(500).json({ message: 'Error searching users' });

@@ -42,35 +42,60 @@ body {
 
 .chat-messages {
     flex: 1;
+    padding: 20px;
     overflow-y: auto;
-    padding: 10px;
-    border-bottom: 1px solid #ccc;
+    display: flex;
+    flex-direction: column;
+}
+
+.message {
+    max-width: 70%;
+    padding: 10px 15px;
+    margin: 5px 0;
+    border-radius: 15px;
+    word-wrap: break-word;
+}
+
+.message.sent {
+    align-self: flex-end;
+    background-color: #0095f6;
+    color: white;
+    border-bottom-right-radius: 5px;
+}
+
+.message.received {
+    align-self: flex-start;
+    background-color: #f0f0f0;
+    color: #262626;
+    border-bottom-left-radius: 5px;
 }
 
 .chat-form {
     display: flex;
-    padding: 10px;
+    padding: 20px;
+    border-top: 1px solid #dbdbdb;
+    background: white;
 }
 
-.chat-form input {
-    flex-grow: 1;
+#messageInput {
+    flex: 1;
     padding: 10px;
-    border-radius: 5px;
-    border: 1px solid #ccc;
+    border: 1px solid #dbdbdb;
+    border-radius: 20px;
+    margin-right: 10px;
 }
 
 .chat-form button {
-    padding: 10px 15px;
-    margin-left: 5px;
-    border-radius: 5px;
-    border: none;
-    background-color: #007bff;
+    padding: 10px 20px;
+    background-color: #0095f6;
     color: white;
+    border: none;
+    border-radius: 20px;
     cursor: pointer;
 }
 
 .chat-form button:hover {
-    background-color: #0056b3; /* Darker shade on hover */
+    background-color: #0081d6;
 }
 
 /* Styles for individual messages */

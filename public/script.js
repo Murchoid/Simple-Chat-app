@@ -239,21 +239,106 @@ function hideLoading() {
 }
 
 // Update login form handler
-document.getElementById('loginForm').addEventListener('submit', function(e) {
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    // Simulate successful login
-    document.getElementById('loginSection').style.display = 'none';
-    document.getElementById('chatSection').style.display = 'block';
-    showWelcomeModal(); // Show the welcome modal on first login
+    
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    
+    try {
+        await login(username, password); // Use the existing login function
+        showWelcomeModal();
+    } catch (error) {
+        console.error('Login failed:', error);
+        alert('Login failed. Please check your credentials and try again.');
+    }
 });
 
-// Registration form handler
-document.getElementById('registerForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    // Simulate successful registration
-    document.getElementById('registerSection').style.display = 'none';
-    document.getElementById('chatSection').style.display = 'block';
-    showWelcomeModal(); // Show the welcome modal on first registration
+// Update the registration form handler
+document.addEventListener('DOMContentLoaded', () => {
+    // Define form elements
+    const elements = {
+        registerForm: document.getElementById('registerForm'),
+        registerUsername: document.getElementById('registerUsername'),
+        registerPassword: document.getElementById('registerPassword'),
+        registerSection: document.getElementById('registerSection'),
+        chatSection: document.getElementById('chatSection')
+    };
+
+    // Log the elements to check if they're found
+    console.log('Form elements:', elements);
+
+    if (elements.registerForm) {
+        elements.registerForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            try {
+                // Check if elements exist
+                if (!elements.registerUsername || !elements.registerPassword) {
+                    console.error('Form elements not found:', {
+                        username: !!elements.registerUsername,
+                        password: !!elements.registerPassword
+                    });
+                    alert('Form elements not found. Please refresh the page.');
+                    return;
+                }
+
+                const username = elements.registerUsername.value.trim();
+                const password = elements.registerPassword.value.trim();
+
+                // Validate input
+                if (!username || !password) {
+                    alert('Please enter both username and password');
+                    return;
+                }
+
+                showLoading(); // Show loading indicator
+
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    console.log('Registration successful:', data);
+                    currentUsername = data.user.username;
+                    currentUserId = data.user._id;
+                    
+                    // Initialize socket connection
+                    await initializeSocket();
+                    
+                    // Hide registration section and show chat section
+                    if (elements.registerSection && elements.chatSection) {
+                        elements.registerSection.style.display = 'none';
+                        elements.chatSection.style.display = 'block';
+                    } else {
+                        console.error('Section elements not found');
+                    }
+                    
+                    // Load initial data (conversations, etc.)
+                    await loadInitialData();
+                    
+                    // Show welcome modal only after everything is set up
+                    showWelcomeModal();
+                } else {
+                    console.error('Registration failed:', data.message);
+                    alert(data.message || 'Registration failed. Please try again.');
+                }
+            } catch (error) {
+                console.error('Registration error:', error);
+                alert('Registration failed. Please try again.');
+            } finally {
+                hideLoading(); // Hide loading indicator
+            }
+        });
+    } else {
+        console.error('Register form not found');
+    }
 });
 
 // Toggle between login and register forms
@@ -289,37 +374,46 @@ function getYouTubeVideoId(url) {
 // Load initial data after login
 async function loadInitialData() {
     try {
-        // Fetch conversations
-        const conversationsResponse = await fetch('/api/conversations');
-        if (!conversationsResponse.ok) {
+        const response = await fetch('/api/conversations');
+        if (!response.ok) {
             throw new Error('Failed to fetch conversations');
         }
-        const conversations = await conversationsResponse.json();
+        const conversations = await response.json();
+        console.log('Conversations fetched:', conversations); // Log the fetched data
         
-        // Update UI
-        const conversationsList = document.getElementById('conversationsList');
-        if (conversations.length === 0) {
-            conversationsList.innerHTML = `
-                <div class="empty-state">
-                    <p>No conversations yet</p>
-                    <button id="findUsers">Find Users</button>
-                </div>
-            `;
-        } else {
-            updateConversationsList(conversations);
+        if (elements.conversationsList) {
+            if (conversations.length === 0) {
+                elements.conversationsList.innerHTML = `
+                    <div class="empty-state">
+                        <p>No conversations yet</p>
+                        <button id="findUsers">Find Users</button>
+                    </div>
+                `;
+            } else {
+                elements.conversationsList.innerHTML = conversations.map(conv => {
+                    const otherUser = getOtherParticipant(conv, currentUserId);
+                    console.log('Other participant:', otherUser); // Log the other participant
+                    return `
+                        <div class="conversation-item" data-id="${conv._id}">
+                            <div class="conversation-info">
+                                <h4>${otherUser.username}</h4>
+                                <p>${conv.lastMessage ? conv.lastMessage.content : 'No messages yet'}</p>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            setupConversationsList(); // Set up event listeners after rendering
         }
-
     } catch (error) {
         console.error('Error loading initial data:', error);
-        // Show a user-friendly error message in the UI
-        const conversationsList = document.getElementById('conversationsList');
-        conversationsList.innerHTML = `
-            <div class="empty-state">
-                <p>Error loading conversations</p>
-                <button onclick="loadInitialData()">Retry</button>
-            </div>
-        `;
     }
+}
+
+// Helper function to get the other participant's info
+function getOtherParticipant(conversation, currentUserId) {
+    const otherParticipant = conversation.participants.find(p => p._id !== currentUserId);
+    return otherParticipant || { username: 'Unknown User' };
 }
 
 // Show main interface
@@ -430,11 +524,34 @@ function setupEventListeners() {
             }
             
             try {
-                const response = await fetch(`/api/users/search?term=${searchTerm}`);
+                const response = await fetch(`/api/users/search?term=${searchTerm}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // Add credentials to the request
+                        'credentials': 'include'
+                    }
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        console.error('User not authenticated');
+                        alert('Please log in again');
+                        // Optionally redirect to login
+                        window.location.href = '/login';
+                        return;
+                    }
+                    throw new Error(`Search failed: ${response.status}`);
+                }
+
                 const users = await response.json();
                 
-                const searchResults = document.getElementById('searchResults');
-                searchResults.innerHTML = users.map(user => `
+                if (!Array.isArray(users)) {
+                    console.error('Unexpected response format:', users);
+                    return;
+                }
+                
+                elements.searchResults.innerHTML = users.map(user => `
                     <div class="search-result-item" data-user-id="${user._id}">
                         <img src="${user.avatar || 'default-avatar.png'}" alt="Avatar" class="avatar">
                         <span>${user.username}</span>
@@ -442,6 +559,11 @@ function setupEventListeners() {
                 `).join('');
             } catch (error) {
                 console.error('Error searching users:', error);
+                elements.searchResults.innerHTML = `
+                    <div class="error-message">
+                        Failed to search users. Please try again.
+                    </div>
+                `;
             }
         });
     }
@@ -516,14 +638,15 @@ function setupEventListeners() {
     }
 }
 
-// Add function to load conversation
+// Update the loadConversation function to check for socket existence
 async function loadConversation(conversationId, username) {
     const chatArea = document.getElementById('chatArea');
     
+    // Update the chat header with a more prominent user info section
     chatArea.innerHTML = `
         <div class="chat-header">
             <div class="chat-user-info">
-                <span>${username}</span>
+                <h3>${username}</h3>
             </div>
         </div>
         <div class="chat-messages" data-conversation-id="${conversationId}"></div>
@@ -534,33 +657,78 @@ async function loadConversation(conversationId, username) {
         </form>
     `;
 
-    // Join the conversation room
-    socket.emit('join_conversation', conversationId);
+    // Add some CSS to style the header
+    const style = document.createElement('style');
+    style.textContent = `
+        .chat-header {
+            padding: 15px 20px;
+            background: white;
+            border-bottom: 1px solid #dbdbdb;
+        }
+        
+        .chat-user-info {
+            display: flex;
+            align-items: center;
+        }
+        
+        .chat-user-info h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #262626;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Check if socket exists before emitting
+    if (socket) {
+        socket.emit('join_conversation', conversationId);
+    } else {
+        console.error('Socket connection not initialized');
+        // Initialize socket if it doesn't exist
+        await initializeSocket();
+        if (socket) {
+            socket.emit('join_conversation', conversationId);
+        }
+    }
 
     // Add submit handler for the message form
     const messageForm = document.getElementById('messageForm');
-    messageForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const input = document.getElementById('messageInput');
-        const content = input.value.trim();
+    if (messageForm) {
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('messageInput');
+            const content = input.value.trim();
 
-        if (content) {
-            try {
-                // Emit the message with the correct structure
-                socket.emit('send_message', {
-                    conversationId,
-                    content
-                });
-                
-                // Clear input after sending
-                input.value = '';
-                
-            } catch (error) {
-                console.error('Error sending message:', error);
-                alert('Failed to send message. Please try again.');
+            if (content && socket) {
+                try {
+                    socket.emit('send_message', {
+                        conversationId,
+                        content
+                    });
+                    input.value = '';
+                    
+                    // Refresh the conversations list after sending a message
+                    await loadInitialData(); // This will update the sidebar
+                    
+                    // Keep the current conversation active in the sidebar
+                    const conversationItems = document.querySelectorAll('.conversation-item');
+                    conversationItems.forEach(item => {
+                        if (item.dataset.id === conversationId) {
+                            item.classList.add('active');
+                        }
+                    });
+
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    alert('Failed to send message. Please try again.');
+                }
+            } else if (!socket) {
+                console.error('Socket connection not available');
+                alert('Connection error. Please refresh the page.');
             }
-        }
-    });
+        });
+    }
 
     // Load existing messages
     try {
@@ -571,17 +739,26 @@ async function loadConversation(conversationId, username) {
         const messagesContainer = document.querySelector('.chat-messages');
         
         messages.forEach(message => {
+            console.log('Message sender:', message.sender._id);
+            console.log('Current user:', currentUserId);
+            
             const messageElement = document.createElement('div');
             messageElement.classList.add('message');
-            messageElement.classList.add(message.sender._id === currentUserId ? 'sent' : 'received');
+            
+            // Check if the message is from the current user
+            if (message.sender._id === currentUserId) {
+                messageElement.classList.add('sent');
+            } else {
+                messageElement.classList.add('received');
+            }
+            
+            // Display the message content
             messageElement.textContent = message.content;
+            
             messagesContainer.appendChild(messageElement);
         });
 
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        
-        // Join the conversation room
-        socket.emit('join_conversation', conversationId);
         
     } catch (error) {
         console.error('Error loading messages:', error);
@@ -845,18 +1022,55 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     `;
                 } else {
-                    elements.conversationsList.innerHTML = conversations.map(conv => `
-                        <div class="conversation-item" data-id="${conv._id}">
-                            <div class="conversation-info">
-                                <h4>${conv.participants[0].username}</h4>
-                                <p>${conv.lastMessage ? conv.lastMessage.content : 'No messages yet'}</p>
+                    elements.conversationsList.innerHTML = conversations.map(conv => {
+                        const otherUser = getOtherParticipant(conv, currentUserId);
+                        return `
+                            <div class="conversation-item" data-id="${conv._id}">
+                                <div class="conversation-info">
+                                    <h4>${otherUser.username}</h4>
+                                    <p>${conv.lastMessage ? conv.lastMessage.content : 'No messages yet'}</p>
+                                </div>
                             </div>
-                        </div>
-                    `).join('');
+                        `;
+                    }).join('');
                 }
+                setupConversationsList(); // Set up event listeners after rendering
             }
         } catch (error) {
             console.error('Error loading initial data:', error);
+        }
+    }
+
+    // Ensure this function is called after the conversations list is loaded
+    function setupConversationsList() {
+        const conversationsList = document.getElementById('conversationsList');
+        if (conversationsList) {
+            conversationsList.addEventListener('click', async (e) => {
+                const conversationItem = e.target.closest('.conversation-item');
+                if (!conversationItem) return;
+
+                try {
+                    const conversationId = conversationItem.dataset.id;
+                    // Make sure we're getting the username from the correct element
+                    const username = conversationItem.querySelector('.conversation-info h4').textContent;
+                    console.log('Selected username:', username); // Debug log
+
+                    // Remove active class from all conversations
+                    document.querySelectorAll('.conversation-item').forEach(item => {
+                        item.classList.remove('active');
+                    });
+
+                    // Add active class to clicked conversation
+                    conversationItem.classList.add('active');
+
+                    // Load the conversation with the username
+                    await loadConversation(conversationId, username);
+
+                } catch (error) {
+                    console.error('Error loading conversation:', error);
+                    alert('Failed to load conversation. Please try again.');
+                }
+            });
         }
     }
 });
