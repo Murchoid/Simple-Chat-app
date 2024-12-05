@@ -81,6 +81,9 @@ async function initializeSocket() {
 function setupSocketEvents() {
     if (!socket) return; // Ensure socket is initialized
 
+    // Remove any existing listeners to prevent duplicates
+    socket.removeAllListeners('receive_message');
+
     // Handle message reception (single source of truth)
     socket.on('receive_message', (data) => {
         console.log('Received message:', data);
@@ -100,10 +103,8 @@ function setupSocketEvents() {
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
         
-        // Only update the conversations list, not the entire chat
-        if (data.sender !== currentUserId) {
-            loadInitialData();
-        }
+        // Update the conversations list
+        loadInitialData();
     });
 
     // Add form submit handler
@@ -123,15 +124,8 @@ function setupSocketEvents() {
                     });
                     input.value = '';
                     
-                    // Update the UI immediately for sent messages
-                    const chatMessages = document.querySelector('.chat-messages');
-                    const messageElement = document.createElement('div');
-                    messageElement.classList.add('message', 'sent');
-                    messageElement.textContent = content;
-                    chatMessages.appendChild(messageElement);
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                    
-                    // Update the sidebar
+                    // Don't update UI here - let the socket event handle it
+                    // Only update the sidebar
                     await loadInitialData();
 
                 } catch (error) {
@@ -612,15 +606,17 @@ function setupEventListeners() {
     }
 }
 
-// Update the loadConversation function to check for socket existence
+// Update the loadConversation function
 async function loadConversation(conversationId, username) {
     const chatArea = document.getElementById('chatArea');
     
-    // Update the chat header with a more prominent user info section
+    // Update the chat header with a more prominent user info section and better styling
     chatArea.innerHTML = `
         <div class="chat-header">
             <div class="chat-user-info">
-                <h3>${username}</h3>
+                <div class="user-details">
+                    <h3>${username || 'Chat'}</h3>
+                </div>
             </div>
         </div>
         <div class="chat-messages" data-conversation-id="${conversationId}"></div>
@@ -630,6 +626,33 @@ async function loadConversation(conversationId, username) {
             <button type="submit">Send</button>
         </form>
     `;
+
+    // Add some CSS to style the header
+    const headerStyle = document.createElement('style');
+    headerStyle.textContent = `
+        .chat-header {
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        
+        .chat-user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .user-details h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #212529;
+        }
+    `;
+    document.head.appendChild(headerStyle);
 
     // Re-attach event listeners after rendering the chat area
     const messageForm = document.getElementById('messageForm');
@@ -647,15 +670,8 @@ async function loadConversation(conversationId, username) {
                     });
                     input.value = '';
                     
-                    // Update the UI immediately for sent messages
-                    const chatMessages = document.querySelector('.chat-messages');
-                    const messageElement = document.createElement('div');
-                    messageElement.classList.add('message', 'sent');
-                    messageElement.textContent = content;
-                    chatMessages.appendChild(messageElement);
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                    
-                    // Update the sidebar
+                    // Don't update UI here - let the socket event handle it
+                    // Only update the sidebar
                     await loadInitialData();
 
                 } catch (error) {
@@ -674,7 +690,6 @@ async function loadConversation(conversationId, username) {
         socket.emit('join_conversation', conversationId);
     } else {
         console.error('Socket connection not initialized');
-        // Initialize socket if it doesn't exist
         await initializeSocket();
         if (socket) {
             socket.emit('join_conversation', conversationId);
@@ -692,17 +707,8 @@ async function loadConversation(conversationId, username) {
         messages.forEach(message => {
             const messageElement = document.createElement('div');
             messageElement.classList.add('message');
-            
-            // Check if the message is from the current user
-            if (message.sender._id === currentUserId) {
-                messageElement.classList.add('sent');
-            } else {
-                messageElement.classList.add('received');
-            }
-            
-            // Display the message content
+            messageElement.classList.add(message.sender._id === currentUserId ? 'sent' : 'received');
             messageElement.textContent = message.content;
-            
             messagesContainer.appendChild(messageElement);
         });
 
