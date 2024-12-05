@@ -223,18 +223,15 @@ function setupSocketEvents() {
     }
 }
 
-// New function to handle typing events
+// Update the typing events function
 function setupTypingEvents() {
     const input = document.getElementById('input');
     console.log('Setting up typing events. Input element:', input);
 
     if (input) {
-        // Remove any existing listeners
-        const newInput = input.cloneNode(true);
-        input.parentNode.replaceChild(newInput, input);
-        
         let typingTimeout;
-        newInput.addEventListener('input', (e) => {
+        
+        input.addEventListener('input', (e) => {
             console.log('Input event triggered');
             if (!socket) {
                 console.log('No socket connection');
