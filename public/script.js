@@ -617,7 +617,14 @@ document.addEventListener('DOMContentLoaded', () => {
         registerForm: document.getElementById('registerForm'),
         getStartedBtn: document.getElementById('getStarted'),
         welcomeModal: document.getElementById('welcomeModal'),
-        welcomeSteps: document.querySelectorAll('.welcome-steps .step')
+        welcomeSteps: document.querySelectorAll('.welcome-steps .step'),
+        conversationsSidebar: document.querySelector('.conversations-sidebar'),
+        newMessageBtn: document.getElementById('newMessageBtn'),
+        newMessageModal: document.getElementById('newMessageModal'),
+        conversationsList: document.getElementById('conversationsList'),
+        startNewChatBtn: document.getElementById('startNewChat'),
+        searchResults: document.getElementById('searchResults'),
+        userSearch: document.getElementById('userSearch')
     };
 
     // Simple function to handle button clicks without debounce
@@ -665,6 +672,8 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.loginSection.style.display = 'none';
         elements.registerSection.style.display = 'none';
         elements.chatSection.style.display = 'block';
+        setupConversationsSidebar(); // Setup sidebar when showing chat section
+        loadInitialData(); // Load conversations
     }
 
     function showWelcomeModal() {
@@ -723,5 +732,131 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Showing privacy section');
         // Add your logic for showing the privacy section
         // This could open a privacy settings modal or navigate to a settings page
+    }
+
+    // Add this function to handle the conversations sidebar
+    function setupConversationsSidebar() {
+        console.log('Setting up conversations sidebar');
+
+        // Handle "New Message" button click
+        if (elements.newMessageBtn) {
+            elements.newMessageBtn.addEventListener('click', () => {
+                console.log('New message button clicked');
+                if (elements.newMessageModal) {
+                    elements.newMessageModal.style.display = 'flex';
+                }
+            });
+        }
+
+        // Handle "Start New Chat" button click
+        if (elements.startNewChatBtn) {
+            elements.startNewChatBtn.addEventListener('click', () => {
+                console.log('Start new chat button clicked');
+                if (elements.newMessageModal) {
+                    elements.newMessageModal.style.display = 'flex';
+                }
+            });
+        }
+
+        // Handle user search
+        if (elements.userSearch) {
+            elements.userSearch.addEventListener('input', async (e) => {
+                const searchTerm = e.target.value;
+                if (searchTerm.length < 1) {
+                    elements.searchResults.innerHTML = '';
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/api/users/search?term=${searchTerm}`);
+                    const users = await response.json();
+                    
+                    elements.searchResults.innerHTML = users.map(user => `
+                        <div class="search-result-item" data-user-id="${user._id}">
+                            <img src="${user.avatar || 'default-avatar.png'}" alt="Avatar" class="avatar">
+                            <span>${user.username}</span>
+                        </div>
+                    `).join('');
+                } catch (error) {
+                    console.error('Error searching users:', error);
+                }
+            });
+        }
+
+        // Handle search result clicks
+        if (elements.searchResults) {
+            elements.searchResults.addEventListener('click', async (e) => {
+                const resultItem = e.target.closest('.search-result-item');
+                if (!resultItem) return;
+
+                try {
+                    const userId = resultItem.dataset.userId;
+                    const username = resultItem.querySelector('span').textContent;
+
+                    const response = await fetch('/api/conversations', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ participantId: userId })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to create conversation');
+                    }
+
+                    const conversation = await response.json();
+                    elements.newMessageModal.style.display = 'none';
+                    loadConversation(conversation._id, username);
+                    loadInitialData();
+
+                } catch (error) {
+                    console.error('Error starting conversation:', error);
+                    alert('Failed to start conversation. Please try again.');
+                }
+            });
+        }
+
+        // Close modal button
+        const closeButtons = document.querySelectorAll('.close-modal');
+        closeButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const modals = document.querySelectorAll('.modal');
+                modals.forEach(modal => modal.style.display = 'none');
+            });
+        });
+    }
+
+    // Add this function to load initial conversations
+    async function loadInitialData() {
+        try {
+            const response = await fetch('/api/conversations');
+            if (!response.ok) {
+                throw new Error('Failed to fetch conversations');
+            }
+            const conversations = await response.json();
+            
+            if (elements.conversationsList) {
+                if (conversations.length === 0) {
+                    elements.conversationsList.innerHTML = `
+                        <div class="empty-state">
+                            <p>No conversations yet</p>
+                            <button id="findUsers">Find Users</button>
+                        </div>
+                    `;
+                } else {
+                    elements.conversationsList.innerHTML = conversations.map(conv => `
+                        <div class="conversation-item" data-id="${conv._id}">
+                            <div class="conversation-info">
+                                <h4>${conv.participants[0].username}</h4>
+                                <p>${conv.lastMessage ? conv.lastMessage.content : 'No messages yet'}</p>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            }
+        } catch (error) {
+            console.error('Error loading initial data:', error);
+        }
     }
 });
