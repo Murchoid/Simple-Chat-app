@@ -139,7 +139,7 @@ io.on('connect', socket => {
     User.findById(socket.handshake.session.passport.user)
         .then(user => {
             socket.username = user.username;  // Use actual username instead of ID
-            const userEmoji = socket.handshake.session.userEmoji;
+            const userEmoji = socket.handshake.session.userEmoji || '👤'; // Provide default emoji
             console.log('A user connected:', socket.username);
             
             io.emit('receive_message', {
@@ -154,7 +154,7 @@ io.on('connect', socket => {
         });
 
     socket.on('send_message', message => {
-        const userEmoji = socket.handshake.session.userEmoji;
+        const userEmoji = socket.handshake.session.userEmoji || '👤'; // Provide default emoji
         console.log(`Message received from ${socket.username} ${userEmoji}: ${message}`);
         io.emit('receive_message', {
             user: socket.username,
@@ -170,6 +170,7 @@ io.on('connect', socket => {
 
     socket.on('disconnect', () => {
         if (socket.username) {
+            const userEmoji = socket.handshake.session.userEmoji || '👤'; // Provide default emoji
             console.log('A user disconnected:', socket.username);
             io.emit('receive_message', {
                 user: 'System',
@@ -177,6 +178,16 @@ io.on('connect', socket => {
                 text: `${userEmoji + socket.username} has left the chat`
             });
         }
+    });
+
+    socket.on('typing', (data) => {
+        console.log('Server received typing event:', data); // Add debug log
+        // Broadcast typing status to all other users
+        socket.broadcast.emit('typing_status', {
+            user: socket.username,
+            isTyping: data.isTyping
+        });
+        console.log('Server emitted typing_status:', { user: socket.username, isTyping: data.isTyping }); // Add debug log
     });
 });
 

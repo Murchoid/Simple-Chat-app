@@ -103,40 +103,11 @@ async function initializeSocket() {
 
 // Function to setup socket events (separated for clarity)
 function setupSocketEvents() {
-    const messages = document.getElementById('messages');
-    const form = document.getElementById('form');
-    const input = document.getElementById('input');
+    
 
-    // Debug log to verify elements are found
-    console.log('Messages element:', messages);
-    console.log('Form element:', form);
-    console.log('Input element:', input);
-
-    // Clear existing messages
-    if (messages) {
-        messages.innerHTML = '';
-    }
-
-    // Message handling
-    if (form) {
-        // Remove existing listeners before adding new ones
-        const newForm = form.cloneNode(true);
-        form.parentNode.replaceChild(newForm, form);
-        
-        newForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const input = newForm.querySelector('#input');
-            if (input && input.value.trim()) {
-                console.log('Attempting to send message:', input.value);
-                socket.emit('send_message', input.value);
-                console.log('Message emitted to server');
-                input.value = '';
-            }
-        });
-    }
-
-    // Message reception
+    // Handle message reception
     socket.on('receive_message', (data) => {
+        const messages = document.getElementById('messages'); // Get element when needed
         console.log('Received message data:', data);
         
         if (!messages) {
@@ -214,29 +185,77 @@ function setupSocketEvents() {
         console.log('Message added to chat:', messageElement.textContent);
     });
 
-    // Handle player state changes
-    function onPlayerStateChange(event, playerId) {
-        console.log('Player state changed:', event.data, 'for player:', playerId);
-        socket.emit('video_control', {
-            playerId: playerId,
-            state: event.data,
-            currentTime: event.target.getCurrentTime()
-        });
-    }
-
-    // Listen for video control events from other users
-    socket.on('video_control', (data) => {
-        console.log('Received video control:', data);
-        const player = players[data.playerId];
-        if (player) {
-            if (data.state === 1) { // Playing
-                player.seekTo(data.currentTime);
-                player.playVideo();
-            } else if (data.state === 2) { // Paused
-                player.pauseVideo();
+    // Add typing status listener
+    socket.on('typing_status', (data) => {
+        console.log('Received typing status:', data);
+        const typingStatus = document.getElementById('typing-status');
+        
+        if (typingStatus) {
+            if (data.isTyping) {
+                typingStatus.textContent = `${data.user} is typing...`;
+                typingStatus.style.display = 'block';
+            } else {
+                typingStatus.style.display = 'none';
+                typingStatus.textContent = '';
             }
+        } else {
+            console.error('Typing status element not found');
         }
     });
+
+    
+    setupTypingEvents();
+
+    // Add form submit handler
+    const form = document.getElementById('form');
+    if (form) {
+        form.addEventListener('submit', (e) => {
+            e.preventDefault(); // Prevent page refresh
+            const input = document.getElementById('input');
+            
+            if (input.value) {
+                socket.emit('send_message', input.value);
+                input.value = '';
+            }
+        });
+    } else {
+        console.error('Form element not found');
+    }
+}
+
+// New function to handle typing events
+function setupTypingEvents() {
+    const input = document.getElementById('input');
+    console.log('Setting up typing events. Input element:', input);
+
+    if (input) {
+        // Remove any existing listeners
+        const newInput = input.cloneNode(true);
+        input.parentNode.replaceChild(newInput, input);
+        
+        let typingTimeout;
+        newInput.addEventListener('input', (e) => {
+            console.log('Input event triggered');
+            if (!socket) {
+                console.log('No socket connection');
+                return;
+            }
+            
+            const typingData = { isTyping: true };
+            console.log('Emitting typing event with data:', typingData);
+            socket.emit('typing', typingData);
+            
+            clearTimeout(typingTimeout);
+            
+            typingTimeout = setTimeout(() => {
+                const stoppedTypingData = { isTyping: false };
+                console.log('Emitting stopped typing event with data:', stoppedTypingData);
+                socket.emit('typing', stoppedTypingData);
+            }, 1000);
+        });
+    } else {
+        console.error('Input element not found for typing events');
+    }
 }
 
 // UI helper functions
@@ -250,6 +269,11 @@ function showChatSection() {
     document.getElementById('loginSection').style.display = 'none';
     document.getElementById('chatSection').style.display = 'flex';
     document.getElementById('registerSection').style.display = 'none';
+    
+    // Setup typing events after chat section is visible
+    setTimeout(() => {
+        setupTypingEvents();
+    }, 100);
 }
 
 function showRegisterSection() {
