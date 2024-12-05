@@ -59,7 +59,29 @@ async function initializeSocket() {
         console.log('Connected to Socket.IO');
     });
 
-    // Handle incoming messages
+    // Handle typing status
+    socket.on('typing_status', (data) => {
+        const typingStatus = document.getElementById('typing-status');
+        if (typingStatus) {
+            if (data.isTyping) {
+                typingStatus.textContent = `${data.user} is typing...`;
+                typingStatus.style.display = 'block';
+            } else {
+                typingStatus.style.display = 'none';
+                typingStatus.textContent = '';
+            }
+        }
+    });
+
+    // Set up other socket events
+    setupSocketEvents();
+}
+
+// Ensure this function is called only once
+function setupSocketEvents() {
+    if (!socket) return; // Ensure socket is initialized
+
+    // Handle message reception (single source of truth)
     socket.on('receive_message', (data) => {
         console.log('Received message:', data);
         
@@ -78,82 +100,49 @@ async function initializeSocket() {
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
         
-        // Update conversations list to show latest message
-        loadInitialData();
-    });
-
-    // Handle typing status
-    socket.on('typing_status', (data) => {
-        const typingStatus = document.getElementById('typing-status');
-        if (typingStatus) {
-            typingStatus.textContent = data.isTyping ? `${data.user} is typing...` : '';
+        // Only update the conversations list, not the entire chat
+        if (data.sender !== currentUserId) {
+            loadInitialData();
         }
     });
-}
-
-// Function to setup socket events (separated for clarity)
-function setupSocketEvents() {
-    
-
-    // Handle message reception
-    socket.on('receive_message', (data) => {
-        console.log('Received message data:', data); // Debug log
-        
-        const chatMessages = document.querySelector('.chat-messages');
-        if (chatMessages) {
-            const messageElement = document.createElement('div');
-            messageElement.classList.add('message');
-            
-            // Check if the message is from the current user
-            if (data.sender === currentUserId) {
-                messageElement.classList.add('sent');
-            } else {
-                messageElement.classList.add('received');
-            }
-            
-            // Display the message content
-            messageElement.textContent = data.content;
-            
-            chatMessages.appendChild(messageElement);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-    });
-
-    // Add typing status listener
-    socket.on('typing_status', (data) => {
-        console.log('Received typing status:', data);
-        const typingStatus = document.getElementById('typing-status');
-        
-        if (typingStatus) {
-            if (data.isTyping) {
-                typingStatus.textContent = `${data.user} is typing...`;
-                typingStatus.style.display = 'block';
-            } else {
-                typingStatus.style.display = 'none';
-                typingStatus.textContent = '';
-            }
-        } else {
-            console.error('Typing status element not found');
-        }
-    });
-
-    
-    setupTypingEvents();
 
     // Add form submit handler
-    const form = document.getElementById('form');
-    if (form) {
-        form.addEventListener('submit', (e) => {
-            e.preventDefault(); // Prevent page refresh
-            const input = document.getElementById('input');
-            
-            if (input.value) {
-                socket.emit('send_message', input.value);
-                input.value = '';
+    const messageForm = document.getElementById('messageForm');
+    if (messageForm) {
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Prevent form submission
+            const input = document.getElementById('messageInput');
+            const content = input.value.trim();
+
+            if (content && socket) {
+                try {
+                    const conversationId = document.querySelector('.chat-messages')?.getAttribute('data-conversation-id');
+                    socket.emit('send_message', {
+                        conversationId,
+                        content
+                    });
+                    input.value = '';
+                    
+                    // Update the UI immediately for sent messages
+                    const chatMessages = document.querySelector('.chat-messages');
+                    const messageElement = document.createElement('div');
+                    messageElement.classList.add('message', 'sent');
+                    messageElement.textContent = content;
+                    chatMessages.appendChild(messageElement);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    
+                    // Update the sidebar
+                    await loadInitialData();
+
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    alert('Failed to send message. Please try again.');
+                }
+            } else if (!socket) {
+                console.error('Socket connection not available');
+                alert('Connection error. Please refresh the page.');
             }
         });
-    } else {
-        console.error('Form element not found');
     }
 }
 
@@ -379,31 +368,42 @@ async function loadInitialData() {
             throw new Error('Failed to fetch conversations');
         }
         const conversations = await response.json();
-        console.log('Conversations fetched:', conversations); // Log the fetched data
+        console.log('Conversations fetched:', conversations);
         
-        if (elements.conversationsList) {
-            if (conversations.length === 0) {
-                elements.conversationsList.innerHTML = `
-                    <div class="empty-state">
-                        <p>No conversations yet</p>
-                        <button id="findUsers">Find Users</button>
+        const conversationsList = document.getElementById('conversationsList');
+        if (!conversationsList) {
+            console.error('Conversations list element not found');
+            return;
+        }
+
+        if (conversations.length === 0) {
+            conversationsList.innerHTML = `
+                <div class="empty-state">
+                    <p>No conversations yet</p>
+                    <button id="findUsers">Find Users</button>
+                </div>
+            `;
+        } else {
+            conversationsList.innerHTML = conversations.map(conv => {
+                const otherUser = getOtherParticipant(conv, currentUserId);
+                return `
+                    <div class="conversation-item" data-id="${conv._id}">
+                        <div class="conversation-info">
+                            <h4>${otherUser.username}</h4>
+                            <p>${conv.lastMessage ? conv.lastMessage.content : 'No messages yet'}</p>
+                        </div>
                     </div>
                 `;
-            } else {
-                elements.conversationsList.innerHTML = conversations.map(conv => {
-                    const otherUser = getOtherParticipant(conv, currentUserId);
-                    console.log('Other participant:', otherUser); // Log the other participant
-                    return `
-                        <div class="conversation-item" data-id="${conv._id}">
-                            <div class="conversation-info">
-                                <h4>${otherUser.username}</h4>
-                                <p>${conv.lastMessage ? conv.lastMessage.content : 'No messages yet'}</p>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
+            }).join('');
+        }
+
+        // Keep the current conversation active if there is one
+        const activeConversation = document.querySelector('.chat-messages')?.getAttribute('data-conversation-id');
+        if (activeConversation) {
+            const activeItem = conversationsList.querySelector(`[data-id="${activeConversation}"]`);
+            if (activeItem) {
+                activeItem.classList.add('active');
             }
-            setupConversationsList(); // Set up event listeners after rendering
         }
     } catch (error) {
         console.error('Error loading initial data:', error);
@@ -435,32 +435,6 @@ async function showMainInterface() {
         console.error('Error showing main interface:', error);
         alert('Error loading interface. Please try refreshing the page.');
     }
-}
-
-// Update conversations list
-function updateConversationsList(conversations) {
-    const conversationsList = document.getElementById('conversationsList');
-    if (!conversationsList) return;
-    
-    if (conversations.length === 0) {
-        conversationsList.innerHTML = `
-            <div class="empty-state">
-                <p>No conversations yet</p>
-                <button id="findUsers">Find Users</button>
-            </div>
-        `;
-        return;
-    }
-    
-    conversationsList.innerHTML = conversations.map(conv => `
-        <div class="conversation-item" data-id="${conv._id}">
-            <img src="${conv.participants[0].avatar || 'default-avatar.png'}" alt="Avatar" class="avatar">
-            <div class="conversation-info">
-                <h4>${conv.participants[0].username}</h4>
-                <p>${conv.lastMessage ? conv.lastMessage.content : 'Start a conversation'}</p>
-            </div>
-        </div>
-    `).join('');
 }
 
 // Update message requests section
@@ -651,48 +625,13 @@ async function loadConversation(conversationId, username) {
         </div>
         <div class="chat-messages" data-conversation-id="${conversationId}"></div>
         <div id="typing-status" class="typing-status"></div>
-        <form id="messageForm" class="chat-form">
+        <form id="messageForm" class="chat-form" onsubmit="event.preventDefault();">
             <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off">
             <button type="submit">Send</button>
         </form>
     `;
 
-    // Add some CSS to style the header
-    const style = document.createElement('style');
-    style.textContent = `
-        .chat-header {
-            padding: 15px 20px;
-            background: white;
-            border-bottom: 1px solid #dbdbdb;
-        }
-        
-        .chat-user-info {
-            display: flex;
-            align-items: center;
-        }
-        
-        .chat-user-info h3 {
-            margin: 0;
-            font-size: 16px;
-            font-weight: 600;
-            color: #262626;
-        }
-    `;
-    document.head.appendChild(style);
-
-    // Check if socket exists before emitting
-    if (socket) {
-        socket.emit('join_conversation', conversationId);
-    } else {
-        console.error('Socket connection not initialized');
-        // Initialize socket if it doesn't exist
-        await initializeSocket();
-        if (socket) {
-            socket.emit('join_conversation', conversationId);
-        }
-    }
-
-    // Add submit handler for the message form
+    // Re-attach event listeners after rendering the chat area
     const messageForm = document.getElementById('messageForm');
     if (messageForm) {
         messageForm.addEventListener('submit', async (e) => {
@@ -708,16 +647,16 @@ async function loadConversation(conversationId, username) {
                     });
                     input.value = '';
                     
-                    // Refresh the conversations list after sending a message
-                    await loadInitialData(); // This will update the sidebar
+                    // Update the UI immediately for sent messages
+                    const chatMessages = document.querySelector('.chat-messages');
+                    const messageElement = document.createElement('div');
+                    messageElement.classList.add('message', 'sent');
+                    messageElement.textContent = content;
+                    chatMessages.appendChild(messageElement);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
                     
-                    // Keep the current conversation active in the sidebar
-                    const conversationItems = document.querySelectorAll('.conversation-item');
-                    conversationItems.forEach(item => {
-                        if (item.dataset.id === conversationId) {
-                            item.classList.add('active');
-                        }
-                    });
+                    // Update the sidebar
+                    await loadInitialData();
 
                 } catch (error) {
                     console.error('Error sending message:', error);
@@ -730,6 +669,18 @@ async function loadConversation(conversationId, username) {
         });
     }
 
+    // Check if socket exists before emitting
+    if (socket) {
+        socket.emit('join_conversation', conversationId);
+    } else {
+        console.error('Socket connection not initialized');
+        // Initialize socket if it doesn't exist
+        await initializeSocket();
+        if (socket) {
+            socket.emit('join_conversation', conversationId);
+        }
+    }
+
     // Load existing messages
     try {
         const response = await fetch(`/api/conversations/${conversationId}/messages`);
@@ -739,9 +690,6 @@ async function loadConversation(conversationId, username) {
         const messagesContainer = document.querySelector('.chat-messages');
         
         messages.forEach(message => {
-            console.log('Message sender:', message.sender._id);
-            console.log('Current user:', currentUserId);
-            
             const messageElement = document.createElement('div');
             messageElement.classList.add('message');
             
@@ -833,10 +781,19 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.getStartedBtn?.addEventListener('click', handleButtonClick);
 
     // Form handlers
-    elements.loginForm?.addEventListener('submit', (e) => {
+    elements.loginForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        showChatSection();
-        showWelcomeModal();
+        
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        
+        try {
+            await login(username, password); // Use the existing login function
+            showWelcomeModal();
+        } catch (error) {
+            console.error('Login failed:', error);
+            alert('Login failed. Please check your credentials and try again.');
+        }
     });
 
     elements.registerForm?.addEventListener('submit', (e) => {
@@ -1004,73 +961,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Add this function to load initial conversations
-    async function loadInitialData() {
-        try {
-            const response = await fetch('/api/conversations');
-            if (!response.ok) {
-                throw new Error('Failed to fetch conversations');
-            }
-            const conversations = await response.json();
-            
-            if (elements.conversationsList) {
-                if (conversations.length === 0) {
-                    elements.conversationsList.innerHTML = `
-                        <div class="empty-state">
-                            <p>No conversations yet</p>
-                            <button id="findUsers">Find Users</button>
-                        </div>
-                    `;
-                } else {
-                    elements.conversationsList.innerHTML = conversations.map(conv => {
-                        const otherUser = getOtherParticipant(conv, currentUserId);
-                        return `
-                            <div class="conversation-item" data-id="${conv._id}">
-                                <div class="conversation-info">
-                                    <h4>${otherUser.username}</h4>
-                                    <p>${conv.lastMessage ? conv.lastMessage.content : 'No messages yet'}</p>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-                }
-                setupConversationsList(); // Set up event listeners after rendering
-            }
-        } catch (error) {
-            console.error('Error loading initial data:', error);
-        }
-    }
-
-    // Ensure this function is called after the conversations list is loaded
+    // Setup conversations list event listeners (call this once during initialization)
     function setupConversationsList() {
         const conversationsList = document.getElementById('conversationsList');
-        if (conversationsList) {
-            conversationsList.addEventListener('click', async (e) => {
-                const conversationItem = e.target.closest('.conversation-item');
-                if (!conversationItem) return;
+        if (!conversationsList) return;
 
-                try {
-                    const conversationId = conversationItem.dataset.id;
-                    // Make sure we're getting the username from the correct element
-                    const username = conversationItem.querySelector('.conversation-info h4').textContent;
-                    console.log('Selected username:', username); // Debug log
+        // Remove any existing event listeners
+        const newConversationsList = conversationsList.cloneNode(true);
+        conversationsList.parentNode.replaceChild(newConversationsList, conversationsList);
 
-                    // Remove active class from all conversations
-                    document.querySelectorAll('.conversation-item').forEach(item => {
-                        item.classList.remove('active');
-                    });
+        newConversationsList.addEventListener('click', async (e) => {
+            const conversationItem = e.target.closest('.conversation-item');
+            if (!conversationItem) return;
 
-                    // Add active class to clicked conversation
-                    conversationItem.classList.add('active');
+            try {
+                const conversationId = conversationItem.dataset.id;
+                const username = conversationItem.querySelector('.conversation-info h4').textContent;
 
-                    // Load the conversation with the username
-                    await loadConversation(conversationId, username);
+                // Remove active class from all conversations
+                document.querySelectorAll('.conversation-item').forEach(item => {
+                    item.classList.remove('active');
+                });
 
-                } catch (error) {
-                    console.error('Error loading conversation:', error);
-                    alert('Failed to load conversation. Please try again.');
-                }
-            });
-        }
+                // Add active class to clicked conversation
+                conversationItem.classList.add('active');
+
+                // Load the conversation
+                await loadConversation(conversationId, username);
+
+            } catch (error) {
+                console.error('Error loading conversation:', error);
+                alert('Failed to load conversation. Please try again.');
+            }
+        });
     }
 });
