@@ -252,3 +252,360 @@ body {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* Base styles for the app container */
+.app-container {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    background: #fff;
+    position: fixed; /* Keep the container fixed */
+    top: 0;
+    left: 0;
+}
+
+/* Conversations sidebar */
+.conversations-sidebar {
+    width: 350px;
+    min-width: 300px;
+    border-right: 1px solid #dbdbdb;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #fff;
+}
+
+/* Main chat area */
+.chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-width: 400px;
+}
+
+/* Chat header */
+.chat-header {
+    padding: 16px;
+    border-bottom: 1px solid #dbdbdb;
+    background: #fff;
+}
+
+/* Messages container */
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    background: #f8f9fa;
+    height: calc(100vh - 130px); /* Adjust based on header and form height */
+}
+
+/* Message form */
+.chat-form {
+    padding: 16px;
+    border-top: 1px solid #dbdbdb;
+    background: #fff;
+    display: flex;
+    gap: 10px;
+}
+
+.chat-form input {
+    flex: 1;
+    padding: 12px;
+    border: 1px solid #dbdbdb;
+    border-radius: 24px;
+    font-size: 14px;
+}
+
+.chat-form button {
+    padding: 8px 20px;
+    background: #0095f6;
+    color: white;
+    border: none;
+    border-radius: 24px;
+    cursor: pointer;
+}
+
+/* Message bubbles */
+.message {
+    max-width: 70%;
+    margin-bottom: 10px;
+    padding: 10px 15px;
+    border-radius: 18px;
+    word-wrap: break-word;
+}
+
+.sent {
+    background: #0095f6;
+    color: white;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+}
+
+.received {
+    background: #e9ecef;
+    color: #000;
+    margin-right: auto;
+    border-bottom-left-radius: 4px;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .conversations-sidebar {
+        width: 100%;
+        position: absolute;
+        left: -100%;
+        transition: left 0.3s ease;
+    }
+
+    .conversations-sidebar.active {
+        left: 0;
+    }
+
+    .chat-area {
+        width: 100%;
+        min-width: unset;
+    }
+
+    .message {
+        max-width: 85%;
+    }
+}
+
+/* Welcome screen */
+.welcome-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    background: #f8f9fa;
+    text-align: center;
+    padding: 20px;
+}
+
+.welcome-screen h2 {
+    margin-bottom: 16px;
+    color: #262626;
+}
+
+.welcome-screen p {
+    color: #8e8e8e;
+    margin-bottom: 24px;
+}
+
+/* Modal Base Styles */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    justify-content: center;
+    align-items: center;
+}
+
+.modal.show {
+    display: flex;
+}
+
+.modal-content {
+    background-color: #fefefe;
+    padding: 32px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 500px;
+    position: relative;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Welcome Modal Specific */
+.welcome-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    margin: 32px 0;
+}
+
+.step {
+    text-align: center;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    transition: transform 0.2s ease;
+    cursor: pointer;
+}
+
+.step:hover {
+    transform: translateY(-2px);
+    background: #f0f0f0;
+}
+
+.step.active {
+    background: #e8f0fe;
+    border-left: 4px solid #0095f6;
+}
+
+.step i {
+    font-size: 36px;
+    color: #0095f6;
+    margin-bottom: 16px;
+    display: block;
+}
+
+.step h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    color: #262626;
+}
+
+.step p {
+    margin: 0;
+    color: #8e8e8e;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+button#getStarted {
+    padding: 12px 24px;
+    background-color: #0095f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 24px;
+    transition: background-color 0.2s ease;
+    width: 100%;
+    max-width: 200px;
+}
+
+button#getStarted:hover {
+    background-color: #0081d6;
+}
+
+/* Modal Responsive */
+@media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        padding: 24px;
+        margin: 16px;
+    }
+
+    .welcome-steps {
+        gap: 24px;
+        margin: 24px 0;
+    }
+
+    .step {
+        padding: 12px;
+    }
+
+    .step i {
+        font-size: 32px;
+    }
+}
+
+/* Search Container */
+.search-container {
+    margin-top: 16px;
+}
+
+#userSearch {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #dbdbdb;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.search-results {
+    margin-top: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Empty States */
+.empty-state {
+    text-align: center;
+    padding: 32px 16px;
+    color: #8e8e8e;
+}
+
+#findUsers {
+    margin-top: 16px;
+    padding: 8px 16px;
+    background: #0095f6;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    .conversations-sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        z-index: 100;
+    }
+
+    .conversations-sidebar.active {
+        transform: translateX(0);
+    }
+
+    .modal-content {
+        width: 95%;
+        margin: 20px;
+    }
+
+    .welcome-steps {
+        gap: 16px;
+    }
+
+    .avatar {
+        width: 40px;
+        height: 40px;
+    }
+
+    .conversation-item {
+        padding: 8px 12px;
+    }
+}
+
+/* Loading Spinner (keep existing styles) */
+.loading-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #0095f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

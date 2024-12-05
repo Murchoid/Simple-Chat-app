@@ -22,6 +22,9 @@ const bcrypt = require('bcrypt');
 require('dotenv').config();
 const port = process.env.PORT || 4000;
 const MongoStore = require('connect-mongo');
+const Conversation = require('./models/Conversation');
+const Message = require('./models/Message');
+const MessageRequest = require('./models/MessageRequest');
 
 // Add cors configuration
 app.use(cors({
@@ -101,25 +104,52 @@ passport.deserializeUser(async (id, done) => {
 const emojis = ["😎", "🥱", "🤠", "💀", "👽", "👾", "🐱‍👤", "🐲", "🤩", "😍", "🥰"];
 
 app.post('/register', async (req, res) => {
-    const { username, password } = req.body;
     try {
+        const { username, password } = req.body;
+        
+        // Check if username already exists
         const existingUser = await User.findOne({ username });
         if (existingUser) {
-            return res.status(400).json({ message: 'Username already exists' });
+            return res.status(400).json({ 
+                message: 'Username already exists' 
+            });
         }
+
+        // Hash the password
         const hashedPassword = await bcrypt.hash(password, 10);
-        const user = new User({ username, password: hashedPassword });
+
+        // Create new user
+        const user = new User({
+            username,
+            password: hashedPassword,
+            messagePrivacy: 'everyone', // default privacy setting
+            isPrivate: false // default account privacy
+        });
+
         await user.save();
-        res.json({ message: 'Registration successful' });
+        
+        // Send success response
+        res.status(201).json({ 
+            message: 'Registration successful',
+            user: { username: user.username }
+        });
+        
     } catch (error) {
-        res.status(500).json({ message: 'Error registering user' });
+        console.error('Registration error:', error);
+        res.status(500).json({ 
+            message: 'Error registering user',
+            error: error.message 
+        });
     }
 });
 
 app.post('/login', passport.authenticate('local'), (req, res) => {
-    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-    req.session.userEmoji = randomEmoji;
-    res.json({ message: 'Login successful', user: req.user.username, emoji: randomEmoji });
+    res.json({
+        user: {
+            _id: req.user._id,
+            username: req.user.username
+        }
+    });
 });
 
 app.get('/logout', (req, res) => {
@@ -128,67 +158,259 @@ app.get('/logout', (req, res) => {
     });
 });
 
+// Example middleware to check if user can message another user
+async function canMessageUser(req, res, next) {
+    const targetUser = await User.findById(req.params.userId);
+    const currentUser = req.user;
+
+    // Check if target user exists
+    if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check messaging privacy settings
+    switch (targetUser.messagePrivacy) {
+        case 'everyone':
+            return next();
+            
+        case 'followers':
+            if (targetUser.followers.includes(currentUser._id)) {
+                return next();
+            }
+            break;
+            
+        case 'mutualFollowers':
+            if (targetUser.followers.includes(currentUser._id) && 
+                currentUser.followers.includes(targetUser._id)) {
+                return next();
+            }
+            break;
+    }
+
+    // Check if there's an accepted message request
+    const messageRequest = await MessageRequest.findOne({
+        from: currentUser._id,
+        to: targetUser._id,
+        status: 'accepted'
+    });
+
+    if (messageRequest) {
+        return next();
+    }
+
+    return res.status(403).json({ 
+        message: 'You cannot message this user directly' 
+    });
+}
+
 // Socket.IO event handlers (only for authenticated users)
 io.on('connect', socket => {
-    if (!socket.handshake.session.passport || !socket.handshake.session.passport.user) {
+    if (!socket.handshake.session.passport?.user) {
         socket.disconnect();
         return;
     }
 
-    // Find the user by ID to get their username
-    User.findById(socket.handshake.session.passport.user)
-        .then(user => {
-            socket.username = user.username;  // Use actual username instead of ID
-            const userEmoji = socket.handshake.session.userEmoji || '👤'; // Provide default emoji
-            console.log('A user connected:', socket.username);
+    const userId = socket.handshake.session.passport.user;
+    
+    // Join user to their personal room
+    socket.join(userId);
+    
+    socket.on('join_conversation', (conversationId) => {
+        // Leave previous conversations
+        socket.rooms.forEach(room => {
+            if (room !== socket.id && room !== userId) {
+                socket.leave(room);
+            }
+        });
+        
+        // Join new conversation room
+        socket.join(conversationId);
+        console.log(`User ${userId} joined conversation ${conversationId}`);
+    });
+
+    socket.on('send_message', async ({ conversationId, content }) => {
+        try {
+            const message = new Message({
+                conversation: conversationId,
+                sender: userId,
+                content,
+                type: 'text'
+            });
             
-            io.emit('receive_message', {
-                user: 'System',
-                emoji: '🤖',
-                text: `${userEmoji + socket.username} has joined the chat`
+            await message.save();
+            
+            // Update conversation's last message
+            await Conversation.findByIdAndUpdate(conversationId, {
+                lastMessage: message._id,
+                lastMessageDate: new Date()
             });
-        })
-        .catch(err => {
-            console.error('Error finding user:', err);
-            socket.disconnect();
-        });
-
-    socket.on('send_message', message => {
-        const userEmoji = socket.handshake.session.userEmoji || '👤'; // Provide default emoji
-        console.log(`Message received from ${socket.username} ${userEmoji}: ${message}`);
-        io.emit('receive_message', {
-            user: socket.username,
-            emoji: userEmoji,
-            text: message
-        });
-    });
-
-    socket.on('video_control', (data) => {
-        console.log('Video control received:', data);
-        socket.broadcast.emit('video_control', data);
-    });
-
-    socket.on('disconnect', () => {
-        if (socket.username) {
-            const userEmoji = socket.handshake.session.userEmoji || '👤'; // Provide default emoji
-            console.log('A user disconnected:', socket.username);
-            io.emit('receive_message', {
-                user: 'System',
-                emoji: '🤖',
-                text: `${userEmoji + socket.username} has left the chat`
+            
+            // Get conversation participants
+            const conversation = await Conversation.findById(conversationId);
+            
+            // Emit to all participants
+            conversation.participants.forEach(participantId => {
+                io.to(participantId.toString()).emit('receive_message', {
+                    content: message.content,
+                    sender: userId,
+                    conversationId
+                });
             });
+            
+        } catch (error) {
+            console.error('Error sending message:', error);
+            socket.emit('message_error', { error: 'Failed to send message' });
         }
     });
 
-    socket.on('typing', (data) => {
-        console.log('Server received typing event:', data); // Add debug log
-        // Broadcast typing status to all other users
-        socket.broadcast.emit('typing_status', {
-            user: socket.username,
-            isTyping: data.isTyping
-        });
-        console.log('Server emitted typing_status:', { user: socket.username, isTyping: data.isTyping }); // Add debug log
+    socket.on('disconnect', () => {
+        console.log('User disconnected:', userId);
     });
+});
+
+app.get('/api/conversations', async (req, res) => {
+    try {
+        // Check if user is authenticated
+        if (!req.user) {
+            return res.status(401).json({ message: 'Not authenticated' });
+        }
+
+        const conversations = await Conversation.find({
+            participants: req.user._id
+        })
+        .populate('participants', 'username')
+        .populate('lastMessage')
+        .sort({ updatedAt: -1 });
+
+        res.json(conversations);
+    } catch (error) {
+        console.error('Error fetching conversations:', error);
+        res.status(500).json({ message: 'Error fetching conversations' });
+    }
+});
+
+
+
+app.get('/api/message-requests/pending', async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ message: 'Not authenticated' });
+        }
+
+        const requests = await MessageRequest.find({
+            to: req.user._id,
+            status: 'pending'
+        }).populate('from', 'username');
+
+        res.json(requests);
+    } catch (error) {
+        console.error('Error fetching message requests:', error);
+        res.status(500).json({ message: 'Error fetching message requests' });
+    }
+});
+
+app.get('/api/users/suggestions', async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ message: 'Not authenticated' });
+        }
+
+        // Get users except the current user
+        const users = await User.find({
+            _id: { $ne: req.user._id }
+        })
+        .select('username')
+        .limit(10);
+
+        res.json(users);
+    } catch (error) {
+        console.error('Error fetching user suggestions:', error);
+        res.status(500).json({ message: 'Error fetching user suggestions' });
+    }
+});
+
+// Add this route to handle user search
+app.get('/api/users/search', async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ message: 'Not authenticated' });
+        }
+
+        const searchTerm = req.query.term;
+        const users = await User.find({
+            _id: { $ne: req.user._id },
+            username: new RegExp(searchTerm, 'i')
+        })
+        .select('username avatar')
+        .limit(10);
+
+        res.json(users);
+    } catch (error) {
+        console.error('Error searching users:', error);
+        res.status(500).json({ message: 'Error searching users' });
+    }
+});
+
+// Add this route if not already present
+app.get('/api/conversations/:conversationId/messages', async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ message: 'Not authenticated' });
+        }
+
+        const messages = await Message.find({
+            conversation: req.params.conversationId
+        })
+        .populate('sender', 'username')
+        .sort({ createdAt: 1 });
+
+        res.json(messages);
+    } catch (error) {
+        console.error('Error fetching messages:', error);
+        res.status(500).json({ message: 'Error fetching messages' });
+    }
+});
+
+// Add this route for creating/getting conversations
+app.post('/api/conversations', async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ message: 'Not authenticated' });
+        }
+
+        const { participantId } = req.body;
+
+        // Check if conversation already exists between these users
+        const existingConversation = await Conversation.findOne({
+            participants: { 
+                $all: [req.user._id, participantId],
+                $size: 2
+            }
+        }).populate('participants', 'username avatar');
+
+        if (existingConversation) {
+            return res.json(existingConversation);
+        }
+
+        // If no existing conversation, create a new one
+        const newConversation = new Conversation({
+            participants: [req.user._id, participantId],
+            lastMessageDate: new Date()
+        });
+
+        await newConversation.save();
+
+        // Populate the participants info before sending response
+        const populatedConversation = await Conversation
+            .findById(newConversation._id)
+            .populate('participants', 'username avatar');
+
+        res.status(201).json(populatedConversation);
+
+    } catch (error) {
+        console.error('Error creating conversation:', error);
+        res.status(500).json({ message: 'Error creating conversation' });
+    }
 });
 
 http.listen(port, () => {

@@ -1,5 +1,6 @@
 let socket = null; // Global socket variable
 let currentUsername = null; // Add this at the top of your file
+let currentUserId;
 
 // Add YouTube API
 const tag = document.createElement('script');
@@ -17,6 +18,7 @@ function onYouTubeIframeAPIReady() {
 // Function to handle login
 async function login(username, password) {
     try {
+        showLoading();
         const response = await fetch('/login', {
             method: 'POST',
             headers: {
@@ -25,79 +27,67 @@ async function login(username, password) {
             body: JSON.stringify({ username, password })
         });
         
-        if (!response.ok) {
-            throw new Error('Login failed');
-        }
+        if (!response.ok) throw new Error('Login failed');
         
         const data = await response.json();
-        currentUsername = data.user; // Store the username
+        currentUsername = data.user.username;
+        currentUserId = data.user._id;
         
-        // Initialize socket only after successful login
+        // Initialize socket
         await initializeSocket();
         
+        // Fetch user data (conversations, requests, etc.)
+        await loadInitialData();
+        
+        hideLoading();
+        showMainInterface();
         return data;
     } catch (error) {
-        console.error('Login error:', error);
+        hideLoading();
         throw error;
     }
 }
 
 // Function to initialize socket connection
 async function initializeSocket() {
-    if (socket && socket.connected) {
-        socket.disconnect();
-    }
+    socket = io({
+        withCredentials: true
+    });
 
-    return new Promise((resolve, reject) => {
-        const socketURL = window.location.hostname === 'localhost' 
-            ? 'http://localhost:4000'
-            : window.location.origin;
+    // Handle connection
+    socket.on('connect', () => {
+        console.log('Connected to Socket.IO');
+    });
 
-        socket = io(socketURL, {
-            withCredentials: true,
-            reconnection: true,
-            reconnectionAttempts: Infinity,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            timeout: 20000,
-            autoConnect: true
-        });
+    // Handle incoming messages
+    socket.on('receive_message', (data) => {
+        console.log('Received message:', data);
+        
+        // Get the current active conversation ID
+        const activeConversation = document.querySelector('.chat-messages')
+            ?.getAttribute('data-conversation-id');
+            
+        // Update messages if we're in the relevant conversation
+        if (activeConversation === data.conversationId) {
+            const chatMessages = document.querySelector('.chat-messages');
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            messageElement.classList.add(data.sender === currentUserId ? 'sent' : 'received');
+            messageElement.textContent = data.content;
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Update conversations list to show latest message
+        loadInitialData();
+    });
 
-        socket.on('connect', () => {
-            console.log('Connected to server with socket ID:', socket.id);
-            showChatSection();
-            resolve();
-        });
-
-        socket.on('connect_error', (error) => {
-            console.error('Socket connection error:', error);
-            if (error.message === 'Unauthorized') {
-                showLoginSection();
-            }
-            reject(error);
-        });
-
-        socket.on('disconnect', (reason) => {
-            console.log('Disconnected:', reason);
-            if (reason === 'io server disconnect') {
-                // Reconnect if server disconnected
-                socket.connect();
-            }
-        });
-
-        socket.on('reconnect', (attemptNumber) => {
-            console.log('Reconnected after', attemptNumber, 'attempts');
-        });
-
-        socket.on('reconnect_attempt', () => {
-            console.log('Attempting to reconnect...');
-        });
-
-        socket.on('reconnect_error', (error) => {
-            console.error('Reconnection error:', error);
-        });
-
-        setupSocketEvents();
+    // Handle typing status
+    socket.on('typing_status', (data) => {
+        const typingStatus = document.getElementById('typing-status');
+        if (typingStatus) {
+            typingStatus.textContent = data.isTyping ? `${data.user} is typing...` : '';
+        }
     });
 }
 
@@ -107,82 +97,26 @@ function setupSocketEvents() {
 
     // Handle message reception
     socket.on('receive_message', (data) => {
-        const messages = document.getElementById('messages'); // Get element when needed
-        console.log('Received message data:', data);
+        console.log('Received message data:', data); // Debug log
         
-        if (!messages) {
-            console.error('Messages container not found!');
-            return;
-        }
-    
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message');
-        
-        if (data.user === currentUsername) {
-            messageElement.classList.add('sent');
-            console.log('Message marked as sent');
-        } else {
-            messageElement.classList.add('received');
-            console.log('Message marked as received');
-        }
-        
-        // Check if message contains YouTube URL
-        const words = data.text.split(' ');
-        let messageText = data.text;
-        
-        words.forEach(word => {
-            const videoId = getYouTubeVideoId(word.trim());
-            console.log('Checking word:', word, 'Video ID:', videoId); // Debug log
+        const chatMessages = document.querySelector('.chat-messages');
+        if (chatMessages) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
             
-            if (videoId) {
-                // Create YouTube embed using iframe directly first
-                const videoContainer = document.createElement('div');
-                const playerId = `youtube-${Date.now()}`;
-                videoContainer.innerHTML = `
-                    <div class="youtube-embed">
-                        <iframe 
-                            id="${playerId}"
-                            width="560" 
-                            height="315" 
-                            src="https://www.youtube.com/embed/${videoId}?enablejsapi=1" 
-                            frameborder="0" 
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                            allowfullscreen>
-                        </iframe>
-                    </div>
-                `;
-                messageElement.appendChild(videoContainer);
-                
-                // After direct iframe embed, initialize the player
-                const iframe = videoContainer.querySelector('iframe');
-                iframe.id = playerId;
-                
-                // Initialize YT Player after a short delay to ensure iframe is loaded
-                setTimeout(() => {
-                    players[playerId] = new YT.Player(playerId, {
-                        events: {
-                            'onReady': (event) => {
-                                console.log('Player ready:', playerId);
-                            },
-                            'onStateChange': (event) => onPlayerStateChange(event, playerId),
-                            'onError': (event) => {
-                                console.error('Player error:', event.data);
-                            }
-                        }
-                    });
-                }, 100);
+            // Check if the message is from the current user
+            if (data.sender === currentUserId) {
+                messageElement.classList.add('sent');
+            } else {
+                messageElement.classList.add('received');
             }
-        });
-
-        // Add the text part of the message
-        const textNode = document.createElement('div');
-        textNode.textContent = `${data.emoji + data.user}: ${messageText}`;
-        messageElement.insertBefore(textNode, messageElement.firstChild);
-        
-        messages.appendChild(messageElement);
-        messages.scrollTop = messages.scrollHeight;
-        
-        console.log('Message added to chat:', messageElement.textContent);
+            
+            // Display the message content
+            messageElement.textContent = data.content;
+            
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
     });
 
     // Add typing status listener
@@ -305,70 +239,30 @@ function hideLoading() {
 }
 
 // Update login form handler
-document.getElementById('loginForm').addEventListener('submit', async (e) => {
+document.getElementById('loginForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    
-    try {
-        showLoading();
-        await login(username, password);
-        hideLoading();
-        showChatSection();
-    } catch (error) {
-        hideLoading();
-        alert('Login failed: ' + error.message);
-    }
+    // Simulate successful login
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('chatSection').style.display = 'block';
+    showWelcomeModal(); // Show the welcome modal on first login
 });
 
-// Update register form handler
-document.getElementById('registerForm').addEventListener('submit', async (e) => {
+// Registration form handler
+document.getElementById('registerForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    const username = document.getElementById('regUsername').value;
-    const password = document.getElementById('regPassword').value;
-    
-    try {
-        showLoading();
-        await register(username, password);
-        hideLoading();
-        // After successful registration, switch to login form
-        document.getElementById('registerSection').style.display = 'none';
-        document.getElementById('loginSection').style.display = 'block';
-        alert('Registration successful! Please login.');
-    } catch (error) {
-        hideLoading();
-        alert('Registration failed');
-    }
+    // Simulate successful registration
+    document.getElementById('registerSection').style.display = 'none';
+    document.getElementById('chatSection').style.display = 'block';
+    showWelcomeModal(); // Show the welcome modal on first registration
 });
-
-// Add registration functionality
-async function register(username, password) {
-    try {
-        const response = await fetch('/register', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ username, password })
-        });
-        
-        if (!response.ok) throw new Error('Registration failed');
-        
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        console.error('Registration error:', error);
-        throw error;
-    }
-}
 
 // Toggle between login and register forms
-document.getElementById('showRegister').addEventListener('click', () => {
+document.getElementById('showRegister').addEventListener('click', function() {
     document.getElementById('loginSection').style.display = 'none';
     document.getElementById('registerSection').style.display = 'block';
 });
 
-document.getElementById('showLogin').addEventListener('click', () => {
+document.getElementById('showLogin').addEventListener('click', function() {
     document.getElementById('registerSection').style.display = 'none';
     document.getElementById('loginSection').style.display = 'block';
 });
@@ -391,3 +285,443 @@ function getYouTubeVideoId(url) {
     }
     return null;
 }
+
+// Load initial data after login
+async function loadInitialData() {
+    try {
+        // Fetch conversations
+        const conversationsResponse = await fetch('/api/conversations');
+        if (!conversationsResponse.ok) {
+            throw new Error('Failed to fetch conversations');
+        }
+        const conversations = await conversationsResponse.json();
+        
+        // Update UI
+        const conversationsList = document.getElementById('conversationsList');
+        if (conversations.length === 0) {
+            conversationsList.innerHTML = `
+                <div class="empty-state">
+                    <p>No conversations yet</p>
+                    <button id="findUsers">Find Users</button>
+                </div>
+            `;
+        } else {
+            updateConversationsList(conversations);
+        }
+
+    } catch (error) {
+        console.error('Error loading initial data:', error);
+        // Show a user-friendly error message in the UI
+        const conversationsList = document.getElementById('conversationsList');
+        conversationsList.innerHTML = `
+            <div class="empty-state">
+                <p>Error loading conversations</p>
+                <button onclick="loadInitialData()">Retry</button>
+            </div>
+        `;
+    }
+}
+
+// Show main interface
+async function showMainInterface() {
+    try {
+        document.getElementById('loginSection').style.display = 'none';
+        document.getElementById('registerSection').style.display = 'none';
+        
+        const chatSection = document.getElementById('chatSection');
+        chatSection.style.display = 'block';
+
+        // Setup event listeners after showing chat section
+        setupEventListeners();
+        
+        // Load initial data
+        await loadInitialData();
+
+    } catch (error) {
+        console.error('Error showing main interface:', error);
+        alert('Error loading interface. Please try refreshing the page.');
+    }
+}
+
+// Update conversations list
+function updateConversationsList(conversations) {
+    const conversationsList = document.getElementById('conversationsList');
+    if (!conversationsList) return;
+    
+    if (conversations.length === 0) {
+        conversationsList.innerHTML = `
+            <div class="empty-state">
+                <p>No conversations yet</p>
+                <button id="findUsers">Find Users</button>
+            </div>
+        `;
+        return;
+    }
+    
+    conversationsList.innerHTML = conversations.map(conv => `
+        <div class="conversation-item" data-id="${conv._id}">
+            <img src="${conv.participants[0].avatar || 'default-avatar.png'}" alt="Avatar" class="avatar">
+            <div class="conversation-info">
+                <h4>${conv.participants[0].username}</h4>
+                <p>${conv.lastMessage ? conv.lastMessage.content : 'Start a conversation'}</p>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Update message requests section
+function updateMessageRequests(requests) {
+    const requestsSection = document.getElementById('messageRequests');
+    if (!requestsSection) return;
+    
+    if (requests.length > 0) {
+        requestsSection.innerHTML = `
+            <div class="requests-header">
+                Message Requests (${requests.length})
+            </div>
+            ${requests.map(req => `
+                <div class="request-item" data-id="${req._id}">
+                    <img src="${req.from.avatar || 'default-avatar.png'}" alt="Avatar" class="avatar">
+                    <div class="request-info">
+                        <h4>${req.from.username}</h4>
+                        <div class="request-actions">
+                            <button class="accept-request">Accept</button>
+                            <button class="decline-request">Decline</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        `;
+    } else {
+        requestsSection.style.display = 'none';
+    }
+}
+
+// Add this function to handle button click events
+function setupEventListeners() {
+    // Find Users and Start New Chat buttons
+    document.body.addEventListener('click', (e) => {
+        if (e.target.id === 'findUsers' || e.target.id === 'startNewChat') {
+            const newMessageModal = document.getElementById('newMessageModal');
+            if (newMessageModal) {
+                newMessageModal.style.display = 'flex';
+            } else {
+                console.error('New message modal not found');
+            }
+        }
+    });
+
+    // Close modal button
+    document.body.addEventListener('click', (e) => {
+        if (e.target.className === 'close-modal') {
+            const modals = document.querySelectorAll('.modal');
+            modals.forEach(modal => modal.style.display = 'none');
+        }
+    });
+
+    // User search input
+    const userSearch = document.getElementById('userSearch');
+    if (userSearch) {
+        userSearch.addEventListener('input', async (e) => {
+            const searchTerm = e.target.value;
+            if (searchTerm.length < 1) {
+                document.getElementById('searchResults').innerHTML = '';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/users/search?term=${searchTerm}`);
+                const users = await response.json();
+                
+                const searchResults = document.getElementById('searchResults');
+                searchResults.innerHTML = users.map(user => `
+                    <div class="search-result-item" data-user-id="${user._id}">
+                        <img src="${user.avatar || 'default-avatar.png'}" alt="Avatar" class="avatar">
+                        <span>${user.username}</span>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error searching users:', error);
+            }
+        });
+    }
+
+    // Add click handler for search results
+    document.getElementById('searchResults').addEventListener('click', async (e) => {
+        // Find the closest parent with class 'search-result-item'
+        const resultItem = e.target.closest('.search-result-item');
+        if (!resultItem) return;
+
+        try {
+            const userId = resultItem.dataset.userId;
+            const username = resultItem.querySelector('span').textContent;
+
+            // Create or get existing conversation
+            const response = await fetch('/api/conversations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ participantId: userId })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to create conversation');
+            }
+
+            const conversation = await response.json();
+
+            // Close the modal
+            document.getElementById('newMessageModal').style.display = 'none';
+
+            // Load the conversation
+            loadConversation(conversation._id, username);
+
+            // Refresh conversations list
+            loadInitialData();
+
+        } catch (error) {
+            console.error('Error starting conversation:', error);
+            alert('Failed to start conversation. Please try again.');
+        }
+    });
+
+    // Add click handler for existing conversations
+    const conversationsList = document.getElementById('conversationsList');
+    if (conversationsList) {
+        conversationsList.addEventListener('click', async (e) => {
+            const conversationItem = e.target.closest('.conversation-item');
+            if (!conversationItem) return;
+
+            try {
+                const conversationId = conversationItem.dataset.id;
+                const username = conversationItem.querySelector('h4').textContent;
+
+                // Remove active class from all conversations
+                document.querySelectorAll('.conversation-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+
+                // Add active class to clicked conversation
+                conversationItem.classList.add('active');
+
+                // Load the conversation
+                await loadConversation(conversationId, username);
+
+            } catch (error) {
+                console.error('Error loading conversation:', error);
+                alert('Failed to load conversation. Please try again.');
+            }
+        });
+    }
+}
+
+// Add function to load conversation
+async function loadConversation(conversationId, username) {
+    const chatArea = document.getElementById('chatArea');
+    
+    chatArea.innerHTML = `
+        <div class="chat-header">
+            <div class="chat-user-info">
+                <span>${username}</span>
+            </div>
+        </div>
+        <div class="chat-messages" data-conversation-id="${conversationId}"></div>
+        <div id="typing-status" class="typing-status"></div>
+        <form id="messageForm" class="chat-form">
+            <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off">
+            <button type="submit">Send</button>
+        </form>
+    `;
+
+    // Join the conversation room
+    socket.emit('join_conversation', conversationId);
+
+    // Add submit handler for the message form
+    const messageForm = document.getElementById('messageForm');
+    messageForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = document.getElementById('messageInput');
+        const content = input.value.trim();
+
+        if (content) {
+            try {
+                // Emit the message with the correct structure
+                socket.emit('send_message', {
+                    conversationId,
+                    content
+                });
+                
+                // Clear input after sending
+                input.value = '';
+                
+            } catch (error) {
+                console.error('Error sending message:', error);
+                alert('Failed to send message. Please try again.');
+            }
+        }
+    });
+
+    // Load existing messages
+    try {
+        const response = await fetch(`/api/conversations/${conversationId}/messages`);
+        if (!response.ok) throw new Error('Failed to load messages');
+        
+        const messages = await response.json();
+        const messagesContainer = document.querySelector('.chat-messages');
+        
+        messages.forEach(message => {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            messageElement.classList.add(message.sender._id === currentUserId ? 'sent' : 'received');
+            messageElement.textContent = message.content;
+            messagesContainer.appendChild(messageElement);
+        });
+
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        
+        // Join the conversation room
+        socket.emit('join_conversation', conversationId);
+        
+    } catch (error) {
+        console.error('Error loading messages:', error);
+    }
+}
+
+// Show welcome modal
+function showWelcomeModal() {
+    const modal = document.getElementById('welcomeModal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+// Hide modal when clicking outside or on close button
+document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal')) {
+        e.target.style.display = 'none';
+    }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM fully loaded and parsed');
+
+    // UI Elements
+    const elements = {
+        loginSection: document.getElementById('loginSection'),
+        registerSection: document.getElementById('registerSection'),
+        chatSection: document.getElementById('chatSection'),
+        showRegisterBtn: document.getElementById('showRegister'),
+        showLoginBtn: document.getElementById('showLogin'),
+        loginForm: document.getElementById('loginForm'),
+        registerForm: document.getElementById('registerForm'),
+        getStartedBtn: document.getElementById('getStarted'),
+        welcomeModal: document.getElementById('welcomeModal'),
+        welcomeSteps: document.querySelectorAll('.welcome-steps .step')
+    };
+
+    // Simple function to handle button clicks without debounce
+    function handleButtonClick(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const buttonId = e.target.id;
+        console.log('Button clicked:', buttonId);
+
+        switch(buttonId) {
+            case 'showRegister':
+                elements.loginSection.style.display = 'none';
+                elements.registerSection.style.display = 'block';
+                break;
+            case 'showLogin':
+                elements.registerSection.style.display = 'none';
+                elements.loginSection.style.display = 'block';
+                break;
+            case 'getStarted':
+                elements.welcomeModal.style.display = 'none';
+                break;
+        }
+    }
+
+    // Add click listeners directly
+    elements.showRegisterBtn?.addEventListener('click', handleButtonClick);
+    elements.showLoginBtn?.addEventListener('click', handleButtonClick);
+    elements.getStartedBtn?.addEventListener('click', handleButtonClick);
+
+    // Form handlers
+    elements.loginForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        showChatSection();
+        showWelcomeModal();
+    });
+
+    elements.registerForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        showChatSection();
+        showWelcomeModal();
+    });
+
+    function showChatSection() {
+        elements.loginSection.style.display = 'none';
+        elements.registerSection.style.display = 'none';
+        elements.chatSection.style.display = 'block';
+    }
+
+    function showWelcomeModal() {
+        elements.welcomeModal.style.display = 'flex';
+    }
+
+    // Show initial section
+    elements.loginSection.style.display = 'block';
+
+    // Add handler for welcome steps
+    function handleStepClick(e) {
+        const step = e.currentTarget;
+        const stepTitle = step.querySelector('h3').textContent;
+        console.log('Step clicked:', stepTitle);
+
+        // Remove active class from all steps
+        elements.welcomeSteps.forEach(s => s.classList.remove('active'));
+        
+        // Add active class to clicked step
+        step.classList.add('active');
+
+        // Handle different steps
+        switch(stepTitle) {
+            case 'Find Friends':
+                showFindFriendsSection();
+                break;
+            case 'Privacy Control':
+                showPrivacySection();
+                break;
+            case 'Start Chatting':
+                showChatSection();
+                elements.welcomeModal.style.display = 'none';
+                break;
+        }
+    }
+
+    // Add click listeners to each step
+    elements.welcomeSteps.forEach(step => {
+        step.addEventListener('click', handleStepClick);
+        // Add cursor pointer style
+        step.style.cursor = 'pointer';
+    });
+
+    // Helper functions for each section
+    function showFindFriendsSection() {
+        console.log('Showing find friends section');
+        // Add your logic for showing the find friends section
+        const newMessageModal = document.getElementById('newMessageModal');
+        if (newMessageModal) {
+            elements.welcomeModal.style.display = 'none';
+            newMessageModal.style.display = 'flex';
+        }
+    }
+
+    function showPrivacySection() {
+        console.log('Showing privacy section');
+        // Add your logic for showing the privacy section
+        // This could open a privacy settings modal or navigate to a settings page
+    }
+});

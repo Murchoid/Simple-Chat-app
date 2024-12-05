@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="home.css">
     <title>Chat Application</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 </head>
 <body>
     <!-- Login Section -->
@@ -29,17 +30,75 @@
 
     <!-- Chat Section (initially hidden) -->
     <div id="chatSection" style="display: none;">
-        <div class="chat-container">
-            <div class="chat-header">
-                <h2>Chat Room</h2>
-                <div id="typing-status" class="typing-status"></div>
+        <div class="app-container">
+            <!-- Left Sidebar -->
+            <div class="conversations-sidebar">
+                <div class="sidebar-header">
+                    <h3>Messages</h3>
+                    <button id="newMessageBtn">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                </div>
+                
+                <!-- Message Requests Section -->
+                <div id="messageRequests" class="message-requests">
+                    <!-- Message requests will be populated here -->
+                </div>
+                
+                <!-- Conversations List -->
+                <div id="conversationsList" class="conversations-list">
+                    <!-- Conversations will be populated here -->
+                </div>
             </div>
-            <div class="chat-messages" id="messages"></div>
-            
-            <form id="form" class="chat-form">
-                <input type="text" id="input" placeholder="Type a message..." autocomplete="off" required />
-                <button type="submit">Send</button>
-            </form>
+
+            <!-- Main Chat Area -->
+            <div class="chat-area" id="chatArea">
+                <!-- Initial welcome screen -->
+                <div class="welcome-screen">
+                    <h2>Welcome to Messages</h2>
+                    <p>Send private messages to other users</p>
+                    <button id="startNewChat">Start New Chat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Welcome Modal -->
+    <div id="welcomeModal" class="modal">
+        <div class="modal-content">
+            <h2>Welcome to Our Chat App!</h2>
+            <div class="welcome-steps">
+                <div class="step">
+                    <i class="fas fa-user-friends"></i>
+                    <h3>Find Friends</h3>
+                    <p>Search for users and start conversations</p>
+                </div>
+                <div class="step">
+                    <i class="fas fa-lock"></i>
+                    <h3>Privacy Control</h3>
+                    <p>Choose who can message you</p>
+                </div>
+                <div class="step">
+                    <i class="fas fa-comments"></i>
+                    <h3>Start Chatting</h3>
+                    <p>Send messages, share media, and more</p>
+                </div>
+            </div>
+            <button id="getStarted">Get Started</button>
+        </div>
+    </div>
+
+    <!-- New Message Modal -->
+    <div id="newMessageModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>New Message</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="search-container">
+                <input type="text" id="userSearch" placeholder="Search users...">
+                <div id="searchResults" class="search-results"></div>
+            </div>
         </div>
     </div>
 
