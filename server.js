@@ -24,7 +24,7 @@ const port = process.env.PORT || 4000;
 const MongoStore = require('connect-mongo');
 const Conversation = require('./models/Conversation');
 const Message = require('./models/Message');
-const MessageRequest = require('./models/MessageRequest');
+const MessageRequest = require('./models/messageRequest');
 
 // Add cors configuration
 app.use(cors({
